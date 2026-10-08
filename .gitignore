@@ -1,10 +1,13 @@
 venv/
 __pycache__/
 *.pyc
+*.bak
 .env
 .env.*
+!.env.example
 logs/
 *.log
 .vscode/
 .idea/
 .DS_Store
+*.save

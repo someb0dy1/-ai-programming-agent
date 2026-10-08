@@ -1,5 +1,7 @@
 import json
+import os
 import requests
+from dotenv import load_dotenv
 
 from app.logger import logger
 from app.tools.calculator import calculator
@@ -12,8 +14,17 @@ from app.tools.file_tool import (
 )
 
 
-OLLAMA_URL = "http://192.168.115.1:11434/api/chat"
-MODEL = "qwen2.5:7b"
+load_dotenv()
+
+OLLAMA_URL = os.getenv(
+    "OLLAMA_URL",
+    "http://127.0.0.1:11434/api/chat"
+)
+
+MODEL = os.getenv(
+    "MODEL",
+    "qwen2.5:7b"
+)
 
 
 TOOLS = [
