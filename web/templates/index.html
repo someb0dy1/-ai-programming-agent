@@ -1,0 +1,672 @@
+
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>AI Programming Agent</title>
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            background: #f5f7fa;
+            color: #333;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 950px;
+            height: 90vh;
+            margin: 5vh auto;
+
+            background: white;
+
+            border-radius: 12px;
+
+            box-shadow:
+                0 4px 20px rgba(0, 0, 0, 0.08);
+
+            display: flex;
+            flex-direction: column;
+
+            overflow: hidden;
+        }
+
+        .header {
+            padding: 20px 25px;
+
+            background: #1f2937;
+
+            color: white;
+        }
+
+        .header h1 {
+            margin: 0;
+
+            font-size: 22px;
+        }
+
+        .header p {
+            margin: 6px 0 0;
+
+            font-size: 13px;
+
+            opacity: 0.75;
+        }
+
+        .status {
+            margin-top: 6px;
+
+            font-size: 12px;
+
+            opacity: 0.8;
+        }
+
+        .chat-box {
+            flex: 1;
+
+            padding: 20px;
+
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 20px;
+
+            display: flex;
+            flex-direction: column;
+        }
+
+        .message.user {
+            align-items: flex-end;
+        }
+
+        .message.ai {
+            align-items: flex-start;
+        }
+
+        .message-content {
+            max-width: 75%;
+
+            padding: 12px 16px;
+
+            border-radius: 10px;
+
+            line-height: 1.6;
+
+            white-space: pre-wrap;
+
+            word-break: break-word;
+        }
+
+        .user .message-content {
+            background: #2563eb;
+
+            color: white;
+        }
+
+        .ai .message-content {
+            background: #f1f5f9;
+
+            color: #222;
+        }
+
+        /* Agent 执行过程 */
+
+        .events {
+            width: 75%;
+
+            margin-top: 8px;
+
+            padding: 10px 12px;
+
+            background: #111827;
+
+            border-radius: 8px;
+
+            font-size: 12px;
+
+            color: #d1d5db;
+        }
+
+        .event {
+            padding: 4px 0;
+
+            border-bottom: 1px solid #374151;
+        }
+
+        .event:last-child {
+            border-bottom: none;
+        }
+
+        .event-thinking {
+            color: #9ca3af;
+        }
+
+        .event-tool_call {
+            color: #93c5fd;
+        }
+
+        .event-sandbox {
+            color: #c4b5fd;
+        }
+
+        .event-error {
+            color: #fca5a5;
+        }
+
+        .event-success {
+            color: #86efac;
+        }
+
+        .event-limit {
+            color: #fbbf24;
+        }
+
+        .input-area {
+            border-top: 1px solid #e5e7eb;
+
+            padding: 15px;
+
+            display: flex;
+
+            gap: 10px;
+        }
+
+        #messageInput {
+            flex: 1;
+
+            padding: 12px;
+
+            border: 1px solid #d1d5db;
+
+            border-radius: 8px;
+
+            outline: none;
+
+            font-size: 15px;
+        }
+
+        #messageInput:focus {
+            border-color: #2563eb;
+        }
+
+        #sendButton {
+            width: 80px;
+
+            border: none;
+
+            border-radius: 8px;
+
+            background: #2563eb;
+
+            color: white;
+
+            cursor: pointer;
+
+            font-size: 15px;
+        }
+
+        #sendButton:hover {
+            background: #1d4ed8;
+        }
+
+        #sendButton:disabled {
+            background: #9ca3af;
+
+            cursor: not-allowed;
+        }
+
+    </style>
+<!-- Markdown -->
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+
+<!-- 代码高亮 -->
+<link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github-dark.min.css"
+>
+<script src="https://cdn.jsdelivr.net/npm/highlight.js/lib/common.min.js"></script>
+</head>
+
+
+<body>
+
+<div class="container">
+
+    <div class="header">
+
+        <h1>
+            AI Programming Agent
+        </h1>
+
+        <p>
+            Ollama + Qwen2.5 + Python Tools + Docker Sandbox
+        </p>
+
+        <div
+            class="status"
+            id="status">
+            正在检查 Agent 状态...
+        </div>
+
+    </div>
+
+
+    <div
+        class="chat-box"
+        id="chatBox">
+
+        <div class="message ai">
+
+            <div class="message-content">
+
+                你好，我是 AI Programming Agent。
+
+                我可以帮助你：
+
+                1. 数学计算
+                2. 获取当前时间
+                3. 运行 Python
+                4. 分析 Python 报错
+                5. 自动 Debug Python 代码
+
+                你可以直接给我一个任务试试。
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <div class="input-area">
+
+        <input
+            type="text"
+            id="messageInput"
+            placeholder="输入你的问题，例如：帮我运行 Python 并自动修复错误"
+        >
+
+        <button
+            id="sendButton">
+            发送
+        </button>
+
+    </div>
+
+</div>
+
+
+<script>
+
+const chatBox =
+    document.getElementById("chatBox");
+
+const messageInput =
+    document.getElementById("messageInput");
+
+const sendButton =
+    document.getElementById("sendButton");
+
+const statusText =
+    document.getElementById("status");
+
+
+/*
+ * 添加普通消息
+ */
+
+function addMessage(content, type) {
+
+    const message =
+        document.createElement("div");
+
+    message.className =
+        "message " + type;
+
+
+    const messageContent =
+        document.createElement("div");
+
+    messageContent.className =
+        "message-content";
+
+
+    /*
+     * AI 消息使用 Markdown 渲染
+     */
+
+    if (type === "ai") {
+
+        messageContent.innerHTML =
+            marked.parse(content);
+
+
+        /*
+         * 对代码块进行语法高亮
+         */
+
+        messageContent
+            .querySelectorAll("pre code")
+            .forEach(
+                (block) => {
+                    hljs.highlightElement(block);
+                }
+            );
+
+    }
+
+    /*
+     * 用户消息仍然使用纯文本
+     */
+
+    else {
+
+        messageContent.textContent =
+            content;
+
+    }
+
+
+    message.appendChild(
+        messageContent
+    );
+
+
+    chatBox.appendChild(
+        message
+    );
+
+
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
+
+
+    return message;
+}
+
+
+/*
+ * 添加 Agent 执行过程
+ */
+
+function addEvents(events) {
+
+    if (!events || events.length === 0) {
+        return;
+    }
+
+
+    const eventBox =
+        document.createElement("div");
+
+    eventBox.className =
+        "events";
+
+
+    events.forEach(event => {
+
+        const item =
+            document.createElement("div");
+
+        item.className =
+            "event event-" + event.type;
+
+
+        let icon = "•";
+
+
+        if (event.type === "thinking") {
+            icon = "🧠";
+        }
+
+        else if (event.type === "tool_call") {
+            icon = "🔧";
+        }
+
+        else if (event.type === "sandbox") {
+            icon = "🐳";
+        }
+
+        else if (event.type === "error") {
+            icon = "❌";
+        }
+
+        else if (event.type === "success") {
+            icon = "✅";
+        }
+
+        else if (event.type === "limit") {
+            icon = "⚠️";
+        }
+
+        else if (event.type === "result") {
+            icon = "📋";
+        }
+
+
+        item.textContent =
+            icon + " " + event.message;
+
+
+        eventBox.appendChild(
+            item
+        );
+
+    });
+
+
+    chatBox.appendChild(
+        eventBox
+    );
+
+
+    chatBox.scrollTop =
+        chatBox.scrollHeight;
+}
+
+
+/*
+ * 检查 Agent 状态
+ */
+
+async function checkHealth() {
+
+    try {
+
+        const response =
+            await fetch("/api/health");
+
+
+        const data =
+            await response.json();
+
+
+        if (data.status === "ok") {
+
+            statusText.textContent =
+                "● Agent 在线";
+
+        }
+
+        else {
+
+            statusText.textContent =
+                "Agent 状态异常";
+
+        }
+
+    }
+
+    catch (error) {
+
+        statusText.textContent =
+            "无法连接 Agent";
+
+    }
+
+}
+
+
+/*
+ * 发送消息
+ */
+
+async function sendMessage() {
+
+    const message =
+        messageInput.value.trim();
+
+
+    if (!message) {
+        return;
+    }
+
+
+    addMessage(
+        message,
+        "user"
+    );
+
+
+    messageInput.value = "";
+
+
+    sendButton.disabled =
+        true;
+
+    sendButton.textContent =
+        "处理中";
+
+
+    try {
+
+        const response =
+            await fetch(
+                "/api/chat",
+                {
+                    method: "POST",
+
+                    headers: {
+                        "Content-Type":
+                            "application/json"
+                    },
+
+                    body: JSON.stringify({
+                        message: message
+                    })
+                }
+            );
+
+
+        const data =
+            await response.json();
+
+
+        /*
+         * 显示 Agent 执行过程
+         */
+
+        addEvents(
+            data.events
+        );
+
+
+        /*
+         * 显示最终答案
+         */
+
+        if (data.success) {
+
+            addMessage(
+                data.answer,
+                "ai"
+            );
+
+        }
+
+        else {
+
+            addMessage(
+                "Agent 执行失败：" +
+                (data.error || "未知错误"),
+                "ai"
+            );
+
+        }
+
+    }
+
+    catch (error) {
+
+        addMessage(
+            "无法连接到 AI Agent API：" +
+            error.message,
+            "ai"
+        );
+
+    }
+
+
+    sendButton.disabled =
+        false;
+
+    sendButton.textContent =
+        "发送";
+
+
+    messageInput.focus();
+
+}
+
+
+/*
+ * 点击发送
+ */
+
+sendButton.addEventListener(
+    "click",
+    sendMessage
+);
+
+
+/*
+ * Enter 发送
+ */
+
+messageInput.addEventListener(
+    "keydown",
+    function(event) {
+
+        if (event.key === "Enter") {
+
+            sendMessage();
+
+        }
+
+    }
+);
+
+
+/*
+ * 页面加载时检查服务
+ */
+
+checkHealth();
+
+messageInput.focus();
+
+</script>
+
+</body>
+
+</html>
