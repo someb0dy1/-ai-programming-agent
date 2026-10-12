@@ -11,6 +11,7 @@ from app.tools.file_tool import (
     list_project_files,
     read_project_file,
     write_project_file,
+    write_project_file_result,
 )
 
 
@@ -32,7 +33,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "calculator",
-            "description": "计算数学表达式，例如 125 * 36 + 500",
+            "description": "仅用于简单四则运算和括号表达式，例如 125 * 36 + 500、(100 + 50) / 2。只允许数字、+、-、*、/、括号和小数点。不要传入 sum、range、变量、函数调用或 Python 代码。遇到求和、循环、数据处理或需要执行 Python 代码的任务时，改用 run_python。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -60,7 +61,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "run_python",
-            "description": "执行 Python 代码或直接运行项目中的真实 Python 文件，并返回运行结果。适合计算、数据处理、编程测试和 Debug。",
+            "description": "在 Docker 隔离沙箱中执行 Python 代码，并返回标准输出和错误信息。用于 Python 编程、循环、求和、数据处理、代码测试和 Debug。需要计算 1 到 N 的整数之和、使用 sum() 或 range() 等 Python 功能时，必须使用此工具。若需要验证数值结果，代码必须使用 print() 输出结果，不要只写表达式。简单四则运算优先使用 calculator。不得声称获得了某个执行结果，除非工具实际返回了该结果。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -80,7 +81,7 @@ TOOLS = [
                         "description": "需要直接运行的项目 Python 文件，例如 'test_debug.py'。指定后将直接在 Docker 沙箱中执行该真实项目文件，而不是重新拼接验证代码。"
                     }
                 },
-                "required": ["code"]
+                "required": []
             }
         }
     },
@@ -139,7 +140,10 @@ def call_llm(messages, tools=None):
     payload = {
         "model": MODEL,
         "messages": messages,
-        "stream": False
+        "stream": False,
+        "options": {
+            "num_predict": 512
+        }
     }
 
     if tools:
@@ -169,16 +173,22 @@ SYSTEM_PROMPT = """
 工具使用规则：
 
 1. 数学计算
-- 涉及数学计算时优先使用 calculator。
-- 不要凭空猜测复杂计算结果。
+- 简单四则运算、括号表达式优先使用 calculator。
+- calculator 不支持函数调用、变量、sum()、range() 或 Python 语法。
+- 涉及循环求和、复杂数据处理或需要执行 Python 代码时，必须使用 run_python。
+- 不要猜测计算结果，必须依据工具实际返回的结果回答。
+
 
 2. 当前时间
 - 用户询问当前日期或时间时，必须使用 get_current_time。
 
 3. Python
-- 涉及 Python 编程、代码测试、数据处理或 Debug 时，可以使用 run_python。
+- 涉及 Python 编程、代码测试、数据处理或 Debug 时，使用 run_python。
 - 如果需要验证计算结果，Python 代码必须使用 print() 输出结果。
 - 不要只根据代码逻辑猜测运行结果。
+- 如果工具返回“程序没有输出内容”，不得声称已经获得了计算结果。
+- 工具执行成功后，必须检查实际输出是否满足用户的要求。
+- 如果已经获得正确结果，直接给出最终答案，不要重复执行无必要的操作。
 - Python 执行失败后，要分析错误原因并尝试修改代码。
 - Debug 最多连续尝试 3 次。
 - 不要通过简单修改函数名、变量名来掩盖原始代码的问题。
@@ -240,6 +250,13 @@ SYSTEM_PROMPT = """
 - 不要忽略工具返回结果。
 - 如果工具已经完成用户要求，可以直接给出最终结果。
 - 如果模型没有生成文字回复，但工具已经成功完成用户要求，可以简洁说明操作已经完成。
+- 必须区分工具执行状态与程序输出的业务内容。
+- 当工具返回“执行成功”时，说明程序正常退出；不能仅因为输出中包含“错误”二字，就认定程序执行失败。
+- 如果程序输出“错误：除数不能为 0”，应结合代码逻辑判断这是否为预期的业务提示。
+- 只有工具实际返回“执行失败”、非零退出码或明确的运行时异常时，才能据此判断程序执行失败。
+- 如果用户要求验证代码修复，必须同时检查实际执行状态和实际输出是否符合测试预期。
+- 如果实际输出符合预期，应直接报告验证通过，不要再次要求修复。
+- 如果执行结果不能证明任务完成，应明确说明验证尚未通过，不得直接宣称修复成功。
 
 9. 文件安全
 - 只能操作 AI Agent 项目目录中的文件。
@@ -261,6 +278,11 @@ def run_agent(user_input, event_callback=None):
     debug_count = 0
     max_debug_count = 3
 
+    # 防止模型反复请求或持续要求执行操作
+    failed_write_paths = set()
+    model_turn_count = 0
+    max_model_turns = 8
+
     def emit(event_type, message):
         if event_callback:
             event_callback({
@@ -268,8 +290,12 @@ def run_agent(user_input, event_callback=None):
                 "message": message
             })
 
-    while True:
-        emit("thinking", "Agent 正在分析任务")
+    while model_turn_count < max_model_turns:
+        model_turn_count += 1
+        emit(
+            "thinking",
+            f"Agent 正在分析任务（第 {model_turn_count}/{max_model_turns} 轮）"
+        )
 
         if debug_count >= max_debug_count:
             emit(
@@ -292,6 +318,18 @@ def run_agent(user_input, event_callback=None):
             final_data = call_llm(final_messages)
             final_message = final_data.get("message", {})
             final_content = final_message.get("content", "")
+
+            if failed_write_paths:
+                failed_paths = ", ".join(sorted(failed_write_paths))
+                emit(
+                    "error",
+                    f"Debug 上限前存在文件写入失败：{failed_paths}"
+                )
+                return (
+                    "任务状态需要检查：以下文件写入失败："
+                    f"{failed_paths}。达到 Debug 次数上限，"
+                    "无法确认这些文件已修改成功。"
+                )
 
             emit("answer", "Agent 已停止 Debug 并生成最终总结")
 
@@ -391,11 +429,13 @@ def run_agent(user_input, event_callback=None):
             if not tool_calls:
                 if not content.strip():
                     emit(
-                        "success",
-                        "工具执行完成，模型未生成文字回复"
+                        "error",
+                        "模型返回了空内容，且没有调用工具；"
+                        "无法确认任务是否完成。"
                     )
                     return (
-                        "操作已完成，相关项目文件已经成功修改。"
+                        "操作未能确认完成：模型返回了空内容，"
+                        "且没有执行任何工具。请重试或检查模型响应。"
                     )
 
                 action_keywords = [
@@ -441,24 +481,180 @@ def run_agent(user_input, event_callback=None):
 
                     continue
 
+                if failed_write_paths:
+                    success_claims = (
+                        "文件已成功修改",
+                        "文件修改成功",
+                        "写入成功",
+                        "修改已完成",
+                        "已经处理好了",
+                        "已处理好",
+                        "处理完成",
+                        "已经完成",
+                        "已完成",
+                        "任务完成",
+                        "可以直接使用",
+                        "已成功创建",
+                        "创建成功",
+                        "修改好了",
+                        "已经修改",
+                    )
+                    if any(claim in content for claim in success_claims):
+                        failed_paths = ", ".join(sorted(failed_write_paths))
+                        emit(
+                            "error",
+                            f"检测到写入失败后的成功声明：{failed_paths}"
+                        )
+                        return (
+                            "无法确认任务成功：以下文件写入失败："
+                            f"{failed_paths}。请检查写入错误并重试。"
+                        )
+
                 emit(
                     "answer",
                     "Agent 生成最终答案"
                 )
                 return content
+        # 识别本批次中写入文件与 Python 执行之间的依赖。
 
-        messages.append(message)
+        def normalize_tool_path(value):
+            """将项目内路径统一转换为相对路径，用于比较文件依赖。"""
+            if not isinstance(value, str) or not value.strip():
+                return ""
+
+            normalized = value.strip().replace("\\", "/")
+
+            # Windows 盘符路径不能参与依赖匹配。
+            if len(normalized) >= 2 and normalized[1] == ":":
+                return ""
+
+            project_root = os.path.realpath(
+                os.path.expanduser("~/ai-agent")
+            )
+
+            if os.path.isabs(normalized):
+                absolute_path = os.path.realpath(normalized)
+            else:
+                absolute_path = os.path.realpath(
+                    os.path.join(project_root, normalized)
+                )
+
+            try:
+                relative_path = os.path.relpath(
+                    absolute_path, project_root
+                )
+            except ValueError:
+                return ""
+
+            # 排除项目目录之外的路径。
+            if (
+                relative_path == ".."
+                or relative_path.startswith(".." + os.sep)
+                or os.path.isabs(relative_path)
+            ):
+                return ""
+
+            return relative_path.replace("\\", "/")
+
+        write_paths = set()
+        python_dependencies = set()
+
+        for pending_call in tool_calls:
+            pending_fn = pending_call.get("function", {})
+            pending_name = pending_fn.get("name")
+            pending_args = pending_fn.get("arguments", {})
+
+            if isinstance(pending_args, str):
+                try:
+                    pending_args = json.loads(pending_args)
+                except Exception:
+                    pending_args = {}
+
+            if not isinstance(pending_args, dict):
+                continue
+
+            if pending_name == "write_project_file":
+                path = normalize_tool_path(pending_args.get("file_path", ""))
+                if path:
+                    write_paths.add(path)
+
+            elif pending_name == "run_python":
+                for item in pending_args.get("files", []) or []:
+                    path = normalize_tool_path(item)
+                    if path:
+                        python_dependencies.add(path)
+
+                path = normalize_tool_path(pending_args.get("entry_file", ""))
+                if path:
+                    python_dependencies.add(path)
+
+        dependent_write_paths = write_paths & python_dependencies
+
+        # 只在存在明确文件依赖时，将相关写入操作提前。
+        if dependent_write_paths:
+            def tool_priority(pending_call):
+                pending_fn = pending_call.get("function", {})
+                pending_name = pending_fn.get("name")
+                pending_args = pending_fn.get("arguments", {})
+
+                if isinstance(pending_args, str):
+                    try:
+                        pending_args = json.loads(pending_args)
+                    except Exception:
+                        pending_args = {}
+
+                if not isinstance(pending_args, dict):
+                    return 1
+
+                path = normalize_tool_path(pending_args.get("file_path", ""))
+                if (
+                    pending_name == "write_project_file"
+                    and path in dependent_write_paths
+                ):
+                    return 0
+
+                return 1
+
+            tool_calls = sorted(tool_calls, key=tool_priority)
+
+
+        # 保存助手的原始响应，使下一轮模型请求能够看到工具调用。
+        # 兼容测试响应中缺少 role 的情况，并保留原生 tool_calls 的 ID。
+        assistant_message = dict(message)
+        assistant_message.setdefault("role", "assistant")
+
+        # 如果执行顺序经过调整，同步工具调用顺序，保持与工具结果一致。
+        if assistant_message.get("tool_calls"):
+            assistant_message["tool_calls"] = tool_calls
+
+        messages.append(assistant_message)
 
         for tool_call in tool_calls:
             function_data = tool_call.get("function", {})
             tool_name = function_data.get("name")
             arguments = function_data.get("arguments", {})
 
+            invalid_arguments = False
+
             if isinstance(arguments, str):
                 try:
                     arguments = json.loads(arguments)
-                except Exception:
-                    arguments = {}
+                except (json.JSONDecodeError, TypeError):
+                    invalid_arguments = True
+
+            if not isinstance(arguments, dict):
+                invalid_arguments = True
+
+            if invalid_arguments:
+                result = "错误：工具参数必须是有效的 JSON 对象。"
+                emit("error", f"{tool_name} 参数无效")
+
+                messages.append({
+                    "role": "tool",
+                    "name": tool_name,
+                    "content": result,
+                })
+                continue
 
             emit(
                 "tool_call",
@@ -474,26 +670,72 @@ def run_agent(user_input, event_callback=None):
                 elif tool_name == "get_current_time":
                     result = get_current_time()
 
+
                 elif tool_name == "run_python":
-                    if debug_count >= max_debug_count:
+                    code = arguments.get("code", "")
+                    files = arguments.get("files", [])
+                    entry_file = arguments.get("entry_file", "")
+
+                    # 先校验参数，避免非法类型参与依赖检查。
+                    if not isinstance(code, str):
+                        result = "错误：code 必须是字符串。"
+                        emit("error", result)
+
+                    elif not isinstance(entry_file, str):
+                        result = "错误：entry_file 必须是字符串。"
+                        emit("error", result)
+
+                    elif not isinstance(files, list) or not all(
+                        isinstance(item, str) and item.strip()
+                        for item in files
+                    ):
                         result = (
-                            f"错误：已达到最大 Debug 次数限制 "
-                            f"({max_debug_count} 次)，禁止继续运行 Python。"
+                            "错误：files 必须是非空字符串组成的列表。"
+                            "如果没有依赖文件，请传入空列表 []。"
                         )
-                        emit("limit", result)
+                        emit("error", result)
+
                     else:
-                        debug_count += 1
+                        dependencies = {
+                            normalize_tool_path(item)
+                            for item in files
+                        }
+                        entry_path = normalize_tool_path(entry_file)
 
-                        emit(
-                            "sandbox",
-                            f"Python 沙箱执行第 {debug_count}/{max_debug_count} 次"
-                        )
+                        if entry_path:
+                            dependencies.add(entry_path)
 
-                        result = run_python(
-    arguments.get("code", ""),
-    arguments.get("files", []),
-    arguments.get("entry_file", "")
-)
+                        blocked_paths = dependencies & failed_write_paths
+
+                        if blocked_paths:
+                            result = (
+                                "已跳过 Python 执行：本批次依赖的文件写入失败："
+                                + ", ".join(sorted(blocked_paths))
+                            )
+                            emit("limit", result)
+
+                        elif debug_count >= max_debug_count:
+                            result = (
+                                f"错误：已达到最大 Debug 次数限制 "
+                                f"({max_debug_count} 次)，禁止继续运行 Python。"
+                            )
+                            emit("limit", result)
+
+                        else:
+                            debug_count += 1
+
+                            emit(
+                                "sandbox",
+                                f"Python 沙箱执行第 "
+                                f"{debug_count}/{max_debug_count} 次"
+                            )
+
+                            result = run_python(
+                                code,
+                                files,
+                                entry_file
+                            )
+
 
                 elif tool_name == "list_project_files":
                     result = list_project_files()
@@ -504,10 +746,16 @@ def run_agent(user_input, event_callback=None):
                     )
 
                 elif tool_name == "write_project_file":
-                    result = write_project_file(
+                    write_result = write_project_file_result(
                         arguments.get("file_path", ""),
                         arguments.get("content", "")
                     )
+                    result = write_result["message"]
+                    written_path = normalize_tool_path(
+                        arguments.get("file_path", "")
+                    )
+                    if written_path and not write_result["success"]:
+                        failed_write_paths.add(written_path)
 
                 else:
                     result = f"错误：未知工具：{tool_name}"
@@ -517,16 +765,44 @@ def run_agent(user_input, event_callback=None):
                     f"{tool_name} 执行结果：{result}"
                 )
 
+
             except Exception as e:
-                logger.error(
-                    f"工具 {tool_name} 执行失败：{e}"
+                logger.exception(
+                    "工具 %s 执行失败",
+                    tool_name,
                 )
 
-                result = f"工具执行失败：{e}"
+                result = (
+                    f"工具 {tool_name} 执行失败。"
+                    "详细错误已记录在服务器日志中。"
+                )
+
+
+                # 写入工具发生未预期异常时，也记录失败路径。
+                if tool_name == "write_project_file":
+                    failed_path = normalize_tool_path(
+                        arguments.get("file_path", "")
+                    )
+                    if failed_path:
+                        failed_write_paths.add(failed_path)
 
                 emit(
                     "error",
                     f"{tool_name} 执行失败"
+                )
+
+
+            if (
+                tool_name == "run_python"
+                and "执行成功" in result
+                and "程序没有输出内容" in result
+            ):
+                result += (
+                    "\n\n提示：本次运行没有产生任何标准输出，"
+                    "不能据此判断计算结果。"
+                    "如果任务需要返回计算结果，请重新调用 run_python，"
+                    "并使用 print() 显式输出结果。"
+                    "例如：print(sum(range(1, 101)))。"
                 )
 
             messages.append(
@@ -535,4 +811,20 @@ def run_agent(user_input, event_callback=None):
                     "content": result
                 }
             )
+
+    emit("limit", f"已达到 Agent 最大请求轮数（{max_model_turns} 轮），停止继续执行。")
+
+    if failed_write_paths:
+        failed_paths = ", ".join(sorted(failed_write_paths))
+        emit(
+            "error",
+            f"达到最大请求轮数时仍存在文件写入失败：{failed_paths}"
+        )
+        return (
+            "任务未能在最大请求轮数内完成。"
+            f"以下文件写入失败：{failed_paths}。"
+            "请检查写入错误后重试。"
+        )
+
+    return "任务未能在最大请求轮数内完成。请检查前面的工具执行记录，再决定是否继续。"
 

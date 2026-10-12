@@ -2,6 +2,13 @@
 
 一个基于 **Ollama + Qwen** 构建的本地 AI Programming Agent。
 
+## 项目演示
+
+![AI Programming Agent 网页演示](docs/images/ai-agent-demo.png)
+
+*AI Programming Agent 网页界面，展示用户任务、工具执行过程与最终回答。*
+
+
 项目不是简单地调用大语言模型生成代码，而是让 Agent 能够围绕真实项目文件完成完整的编程任务闭环：
 
 ```text

@@ -1,672 +1,511 @@
-
 <!DOCTYPE html>
 <html lang="zh-CN">
-
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DevAgent — AI 编程工作台</title>
 
-    <title>AI Programming Agent</title>
-
-    <style>
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            font-family: Arial, "Microsoft YaHei", sans-serif;
-            background: #f5f7fa;
-            color: #333;
-        }
-
-        .container {
-            width: 90%;
-            max-width: 950px;
-            height: 90vh;
-            margin: 5vh auto;
-
-            background: white;
-
-            border-radius: 12px;
-
-            box-shadow:
-                0 4px 20px rgba(0, 0, 0, 0.08);
-
-            display: flex;
-            flex-direction: column;
-
-            overflow: hidden;
-        }
-
-        .header {
-            padding: 20px 25px;
-
-            background: #1f2937;
-
-            color: white;
-        }
-
-        .header h1 {
-            margin: 0;
-
-            font-size: 22px;
-        }
-
-        .header p {
-            margin: 6px 0 0;
-
-            font-size: 13px;
-
-            opacity: 0.75;
-        }
-
-        .status {
-            margin-top: 6px;
-
-            font-size: 12px;
-
-            opacity: 0.8;
-        }
-
-        .chat-box {
-            flex: 1;
-
-            padding: 20px;
-
-            overflow-y: auto;
-        }
-
-        .message {
-            margin-bottom: 20px;
-
-            display: flex;
-            flex-direction: column;
-        }
-
-        .message.user {
-            align-items: flex-end;
-        }
-
-        .message.ai {
-            align-items: flex-start;
-        }
-
-        .message-content {
-            max-width: 75%;
-
-            padding: 12px 16px;
-
-            border-radius: 10px;
-
-            line-height: 1.6;
-
-            white-space: pre-wrap;
-
-            word-break: break-word;
-        }
-
-        .user .message-content {
-            background: #2563eb;
-
-            color: white;
-        }
-
-        .ai .message-content {
-            background: #f1f5f9;
-
-            color: #222;
-        }
-
-        /* Agent 执行过程 */
-
-        .events {
-            width: 75%;
-
-            margin-top: 8px;
-
-            padding: 10px 12px;
-
-            background: #111827;
-
-            border-radius: 8px;
-
-            font-size: 12px;
-
-            color: #d1d5db;
-        }
-
-        .event {
-            padding: 4px 0;
-
-            border-bottom: 1px solid #374151;
-        }
-
-        .event:last-child {
-            border-bottom: none;
-        }
-
-        .event-thinking {
-            color: #9ca3af;
-        }
-
-        .event-tool_call {
-            color: #93c5fd;
-        }
-
-        .event-sandbox {
-            color: #c4b5fd;
-        }
-
-        .event-error {
-            color: #fca5a5;
-        }
-
-        .event-success {
-            color: #86efac;
-        }
-
-        .event-limit {
-            color: #fbbf24;
-        }
-
-        .input-area {
-            border-top: 1px solid #e5e7eb;
-
-            padding: 15px;
-
-            display: flex;
-
-            gap: 10px;
-        }
-
-        #messageInput {
-            flex: 1;
-
-            padding: 12px;
-
-            border: 1px solid #d1d5db;
-
-            border-radius: 8px;
-
-            outline: none;
-
-            font-size: 15px;
-        }
-
-        #messageInput:focus {
-            border-color: #2563eb;
-        }
-
-        #sendButton {
-            width: 80px;
-
-            border: none;
-
-            border-radius: 8px;
-
-            background: #2563eb;
-
-            color: white;
-
-            cursor: pointer;
-
-            font-size: 15px;
-        }
-
-        #sendButton:hover {
-            background: #1d4ed8;
-        }
-
-        #sendButton:disabled {
-            background: #9ca3af;
-
-            cursor: not-allowed;
-        }
-
-    </style>
-<!-- Markdown -->
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-
-<!-- 代码高亮 -->
-<link
-    rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github-dark.min.css"
->
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3.2.6/dist/purify.min.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js/styles/github-dark.min.css">
 <script src="https://cdn.jsdelivr.net/npm/highlight.js/lib/common.min.js"></script>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg: #0b0e14;
+  --panel: #11151e;
+  --panel2: #171c27;
+  --border: #252c3a;
+  --text: #e7eaf0;
+  --muted: #8992a5;
+  --accent: #8b7cff;
+  --green: #42d6a4;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; height: 100vh; overflow: hidden;
+  background: var(--bg); color: var(--text);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    "Microsoft YaHei", sans-serif;
+}
+button, textarea { font: inherit; }
+button { cursor: pointer; }
+.app { display: flex; height: 100vh; }
+.sidebar {
+  width: 245px; flex-shrink: 0; padding: 22px 15px;
+  display: flex; flex-direction: column; gap: 22px;
+  background: #0e1118; border-right: 1px solid var(--border);
+}
+.brand { display: flex; align-items: center; gap: 11px; padding: 2px 7px; }
+.brand-icon {
+  width: 38px; height: 38px; border-radius: 12px;
+  display: grid; place-items: center; font-size: 20px;
+  background: linear-gradient(135deg, #8b7cff, #4e9cff);
+  box-shadow: 0 4px 22px #7565ff30;
+}
+.brand-name { font-size: 16px; font-weight: 750; letter-spacing: -.3px; }
+.brand-sub { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.new-chat {
+  width: 100%; padding: 12px; border-radius: 10px;
+  border: 1px solid #38344f; background: #211d35;
+  color: #d9d3ff; text-align: left; transition: .2s;
+}
+.new-chat:hover { background: #2a2543; }
+.side-label {
+  padding: 0 9px; margin-bottom: 10px; color: #6f788b;
+  font-size: 10px; font-weight: 750; letter-spacing: 1.4px;
+}
+.side-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px; color: #aeb6c6; font-size: 13px;
+  border-radius: 8px; line-height: 1.4;
+}
+.side-item.active { background: #1b2030; color: #e0dcff; }
+.side-icon { width: 19px; text-align: center; }
+.sidebar-bottom { margin-top: auto; }
+.model-card {
+  padding: 13px; border: 1px solid var(--border);
+  border-radius: 11px; background: #131823;
+}
+.model-title { font-size: 12px; font-weight: 650; }
+.model-desc { margin-top: 6px; color: var(--muted); font-size: 11px; }
+.model-status { display: flex; align-items: center; gap: 7px; margin-top: 12px; font-size: 11px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+.dot.offline { background: #f87171; }
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.topbar {
+  height: 66px; flex-shrink: 0; padding: 0 28px;
+  display: flex; align-items: center; justify-content: space-between;
+  border-bottom: 1px solid var(--border); background: #0e1118;
+}
+.page-title { font-size: 14px; font-weight: 650; }
+.page-subtitle { margin-top: 4px; color: var(--muted); font-size: 11px; }
+.top-status {
+  display: flex; align-items: center; gap: 8px; color: #9da8b9;
+  padding: 7px 10px; border: 1px solid var(--border);
+  border-radius: 20px; font-size: 11px;
+}
+.top-status .dot { width: 6px; height: 6px; }
+.workspace {
+  flex: 1; min-height: 0; display: flex; justify-content: center;
+  overflow-y: auto; padding: 32px 22px 20px;
+}
+.chat { width: 100%; max-width: 830px; display: flex; flex-direction: column; }
+.welcome { margin: auto 0 28px; padding: 25px 0 5px; }
+.welcome-icon {
+  width: 54px; height: 54px; display: grid; place-items: center;
+  border-radius: 16px; font-size: 26px; margin-bottom: 22px;
+  background: linear-gradient(135deg, #292349, #192e48);
+  border: 1px solid #383457;
+}
+.welcome h1 { font-size: clamp(25px, 3vw, 34px); letter-spacing: -1px; margin: 0; }
+.gradient {
+  background: linear-gradient(90deg, #b7aaff, #76c9ff);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.welcome p { color: var(--muted); font-size: 14px; line-height: 1.8; margin: 13px 0 24px; }
+.suggestions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.suggestion {
+  min-height: 70px; padding: 13px 14px; text-align: left;
+  background: #111620; border: 1px solid var(--border);
+  border-radius: 11px; color: var(--text); transition: .18s;
+}
+.suggestion:hover { border-color: #6259a0; background: #171a29; }
+.suggestion strong { display: block; font-size: 12px; font-weight: 650; }
+.suggestion span { display: block; margin-top: 6px; color: var(--muted); font-size: 11px; }
+.messages { display: flex; flex-direction: column; gap: 24px; padding-bottom: 18px; }
+.message { display: flex; gap: 12px; align-items: flex-start; }
+.avatar {
+  flex-shrink: 0; width: 30px; height: 30px; display: grid; place-items: center;
+  border-radius: 9px; font-size: 13px; font-weight: 750;
+  background: #25203e; color: #c4b8ff; border: 1px solid #393154;
+}
+.message.user { flex-direction: row-reverse; }
+.message.user .avatar { background: #202b3d; color: #b9d7ff; border-color: #30405a; }
+.message-body { min-width: 0; max-width: calc(100% - 44px); }
+.message.user .message-body { display: flex; flex-direction: column; align-items: flex-end; }
+.message-content {
+  padding: 12px 15px; border-radius: 4px 13px 13px 13px;
+  background: #151a24; border: 1px solid #252c3a;
+  font-size: 13px; line-height: 1.85; overflow-wrap: anywhere;
+}
+.message.user .message-content {
+  background: #292441; border-color: #40365f;
+  border-radius: 13px 4px 13px 13px; white-space: pre-wrap;
+}
+.message-content p { margin: 0 0 10px; }
+.message-content p:last-child { margin-bottom: 0; }
+.message-content h1, .message-content h2, .message-content h3 { margin: 15px 0 8px; font-size: 15px; }
+.message-content ul, .message-content ol { padding-left: 22px; }
+.message-content a { color: #a9a0ff; }
+.message-content code {
+  font-family: "Cascadia Code", Consolas, monospace; font-size: 12px;
+  background: #252a38; padding: 2px 5px; border-radius: 4px;
+}
+.message-content pre {
+  overflow-x: auto; padding: 14px; border-radius: 9px;
+  background: #0b0e14; border: 1px solid #293040;
+}
+.message-content pre code { padding: 0; background: transparent; }
+.events {
+  margin-top: 10px; border: 1px solid #2a3040;
+  background: #10141d; border-radius: 10px; overflow: hidden;
+}
+.events summary {
+  padding: 10px 12px; cursor: pointer; color: #a9b3c5;
+  font-size: 11px; font-weight: 650; list-style: none;
+}
+.events summary::-webkit-details-marker { display: none; }
+.events summary::before { content: "▸"; display: inline-block; margin-right: 8px; color: #9b8cff; }
+.events[open] summary::before { content: "▾"; }
+.event-list { padding: 0 12px 9px; }
+.event { display: flex; gap: 8px; padding: 7px 0; border-top: 1px solid #202634; font-size: 11px; line-height: 1.6; }
+.event-icon { flex-shrink: 0; }
+.event-message { color: #aab3c3; overflow-wrap: anywhere; }
+.event-thinking .event-icon { color: #b6a7ff; }
+.event-tool_call .event-icon { color: #8ecbff; }
+.event-sandbox .event-icon { color: #c2a7ff; }
+.event-error .event-icon { color: #ff8585; }
+.event-success .event-icon { color: #65dfb2; }
+.event-limit .event-icon { color: #f3c86d; }
+.event-result .event-icon { color: #8ecbff; }
+.loading { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 12px; padding: 7px 0; }
+.spinner {
+  width: 14px; height: 14px; border: 2px solid #36364c;
+  border-top-color: #a99cff; border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.composer-wrap {
+  flex-shrink: 0; padding: 10px 22px 20px;
+  background: linear-gradient(transparent, #0b0e14 18%);
+}
+.composer { max-width: 830px; margin: 0 auto; }
+.input-shell {
+  padding: 12px; border-radius: 15px;
+  background: #141923; border: 1px solid #303748;
+  box-shadow: 0 8px 30px #00000020; transition: border-color .2s;
+}
+.input-shell:focus-within { border-color: #6559a4; }
+#messageInput {
+  width: 100%; min-height: 48px; max-height: 180px; resize: vertical;
+  padding: 3px 4px 10px; color: var(--text); background: transparent;
+  border: 0; outline: 0; font-size: 13px; line-height: 1.7;
+}
+#messageInput::placeholder { color: #717b8f; }
+.input-bottom { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.input-hint { color: #717b8f; font-size: 10px; }
+.send-button {
+  min-width: 76px; padding: 9px 13px; border: 0; border-radius: 9px;
+  color: white; font-size: 12px; font-weight: 650;
+  background: linear-gradient(135deg, #7665df, #5a79df);
+  transition: .2s;
+}
+.send-button:hover { filter: brightness(1.15); }
+.send-button:disabled { opacity: .55; cursor: not-allowed; }
+.disclaimer { margin-top: 10px; text-align: center; color: #626b7d; font-size: 10px; }
+@media (max-width: 720px) {
+  .sidebar { display: none; }
+  .topbar { height: 58px; padding: 0 15px; }
+  .workspace { padding: 22px 14px 12px; }
+  .composer-wrap { padding: 8px 12px 13px; }
+  .suggestions { grid-template-columns: 1fr; }
+  .welcome { margin-top: 18px; }
+  .message-content { font-size: 12px; }
+  .top-status { font-size: 10px; }
+}
+</style>
 </head>
 
-
 <body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-icon">⌘</div>
+      <div>
+        <div class="brand-name">DevAgent</div>
+        <div class="brand-sub">AI PROGRAMMING WORKSPACE</div>
+      </div>
+    </div>
 
-<div class="container">
+    <button class="new-chat" id="newChatButton">＋　新建对话</button>
 
-    <div class="header">
+    <div>
+      <div class="side-label">WORKSPACE</div>
+      <div class="side-item active"><span class="side-icon">◈</span>AI 编程助手</div>
+      <div class="side-item"><span class="side-icon">⌘</span>工具调用与执行</div>
+      <div class="side-item"><span class="side-icon">▤</span>项目说明</div>
+    </div>
 
-        <h1>
-            AI Programming Agent
-        </h1>
+    <div class="sidebar-bottom">
+      <div class="side-label">MODEL CONFIGURATION</div>
+      <div class="model-card">
+        <div class="model-title">Qwen2.5 · 7B</div>
+        <div class="model-desc">Local LLM · Ollama</div>
+        <div class="model-status"><span class="dot" id="sideDot"></span><span id="sideStatus">正在检测服务</span></div>
+      </div>
+    </div>
+  </aside>
 
-        <p>
-            Ollama + Qwen2.5 + Python Tools + Docker Sandbox
-        </p>
+  <main class="main">
+    <header class="topbar">
+      <div>
+        <div class="page-title">AI 编程工作台</div>
+        <div class="page-subtitle">Plan · Execute · Debug</div>
+      </div>
+      <div class="top-status"><span class="dot" id="healthDot"></span><span id="status">正在检查服务...</span></div>
+    </header>
 
-        <div
-            class="status"
-            id="status">
-            正在检查 Agent 状态...
+    <section class="workspace" id="workspace">
+      <div class="chat">
+        <div class="welcome" id="welcome">
+          <div class="welcome-icon">✳</div>
+          <h1>让代码问题，<span class="gradient">迎刃而解。</span></h1>
+          <p>你的本地 AI 编程助手。描述目标，分析报错，运行 Python，<br>查看 Agent 的工具调用与执行结果。</p>
+          <div class="suggestions">
+            <button class="suggestion" data-prompt="帮我写一个 Python 函数，计算列表中的平均值，并处理空列表。">
+              <strong>⌘　编写 Python 代码</strong>
+              <span>生成函数并说明实现思路</span>
+            </button>
+            <button class="suggestion" data-prompt="请解释 Python 中 NameError 的常见原因，并给出一个可运行的例子。">
+              <strong>⌕　分析代码报错</strong>
+              <span>定位常见异常和解决方案</span>
+            </button>
+            <button class="suggestion" data-prompt="请帮我设计一个 Python 程序，用于检查本机磁盘使用率，并在超过 80% 时发出警告。">
+              <strong>▣　创建运维脚本</strong>
+              <span>从需求出发构建小工具</span>
+            </button>
+            <button class="suggestion" data-prompt="请计算 1 到 100 的整数之和，并展示计算过程。">
+              <strong>∑　运行计算任务</strong>
+              <span>验证计算结果与执行过程</span>
+            </button>
+          </div>
         </div>
+        <div class="messages" id="messages"></div>
+      </div>
+    </section>
 
-    </div>
-
-
-    <div
-        class="chat-box"
-        id="chatBox">
-
-        <div class="message ai">
-
-            <div class="message-content">
-
-                你好，我是 AI Programming Agent。
-
-                我可以帮助你：
-
-                1. 数学计算
-                2. 获取当前时间
-                3. 运行 Python
-                4. 分析 Python 报错
-                5. 自动 Debug Python 代码
-
-                你可以直接给我一个任务试试。
-
-            </div>
-
+    <footer class="composer-wrap">
+      <div class="composer">
+        <div class="input-shell">
+          <textarea id="messageInput" rows="2" placeholder="向 DevAgent 描述你的任务……（Enter 发送，Shift + Enter 换行）"></textarea>
+          <div class="input-bottom">
+            <span class="input-hint">Python Tools · Agent Execution · Docker Sandbox</span>
+            <button class="send-button" id="sendButton">发送 ↑</button>
+          </div>
         </div>
-
-    </div>
-
-
-    <div class="input-area">
-
-        <input
-            type="text"
-            id="messageInput"
-            placeholder="输入你的问题，例如：帮我运行 Python 并自动修复错误"
-        >
-
-        <button
-            id="sendButton">
-            发送
-        </button>
-
-    </div>
-
+        <div class="disclaimer">AI 生成的代码和执行结果请在使用前自行验证。</div>
+      </div>
+    </footer>
+  </main>
 </div>
 
-
 <script>
+const messages = document.getElementById("messages");
+const workspace = document.getElementById("workspace");
+const input = document.getElementById("messageInput");
+const sendButton = document.getElementById("sendButton");
+const welcome = document.getElementById("welcome");
+const statusText = document.getElementById("status");
+const healthDot = document.getElementById("healthDot");
+const sideDot = document.getElementById("sideDot");
+const sideStatus = document.getElementById("sideStatus");
 
-const chatBox =
-    document.getElementById("chatBox");
+let busy = false;
 
-const messageInput =
-    document.getElementById("messageInput");
+function scrollToBottom() {
+  workspace.scrollTop = workspace.scrollHeight;
+}
 
-const sendButton =
-    document.getElementById("sendButton");
-
-const statusText =
-    document.getElementById("status");
-
-
-/*
- * 添加普通消息
- */
+function renderMarkdown(element, content) {
+  const text = String(content ?? "");
+  if (window.marked && window.DOMPurify) {
+    element.innerHTML = DOMPurify.sanitize(marked.parse(text));
+    element.querySelectorAll("pre code").forEach(block => {
+      if (window.hljs) hljs.highlightElement(block);
+    });
+  } else {
+    element.textContent = text;
+  }
+}
 
 function addMessage(content, type) {
+  const message = document.createElement("div");
+  message.className = "message " + type;
 
-    const message =
-        document.createElement("div");
+  const avatar = document.createElement("div");
+  avatar.className = "avatar";
+  avatar.textContent = type === "user" ? "你" : "AI";
 
-    message.className =
-        "message " + type;
+  const body = document.createElement("div");
+  body.className = "message-body";
 
+  const bubble = document.createElement("div");
+  bubble.className = "message-content";
 
-    const messageContent =
-        document.createElement("div");
+  if (type === "ai") renderMarkdown(bubble, content);
+  else bubble.textContent = String(content ?? "");
 
-    messageContent.className =
-        "message-content";
-
-
-    /*
-     * AI 消息使用 Markdown 渲染
-     */
-
-    if (type === "ai") {
-
-        messageContent.innerHTML =
-            marked.parse(content);
-
-
-        /*
-         * 对代码块进行语法高亮
-         */
-
-        messageContent
-            .querySelectorAll("pre code")
-            .forEach(
-                (block) => {
-                    hljs.highlightElement(block);
-                }
-            );
-
-    }
-
-    /*
-     * 用户消息仍然使用纯文本
-     */
-
-    else {
-
-        messageContent.textContent =
-            content;
-
-    }
-
-
-    message.appendChild(
-        messageContent
-    );
-
-
-    chatBox.appendChild(
-        message
-    );
-
-
-    chatBox.scrollTop =
-        chatBox.scrollHeight;
-
-
-    return message;
+  body.appendChild(bubble);
+  message.append(avatar, body);
+  messages.appendChild(message);
+  scrollToBottom();
+  return body;
 }
 
+function addEvents(events, parent) {
+  if (!Array.isArray(events) || events.length === 0) return;
 
-/*
- * 添加 Agent 执行过程
- */
+  const details = document.createElement("details");
+  details.className = "events";
 
-function addEvents(events) {
+  const summary = document.createElement("summary");
+  summary.textContent = `执行过程 · ${events.length} 条事件`;
+  details.appendChild(summary);
 
-    if (!events || events.length === 0) {
-        return;
-    }
+  const list = document.createElement("div");
+  list.className = "event-list";
 
+  const icons = {
+    thinking: "🧠", tool_call: "🔧", sandbox: "🐳",
+    error: "✕", success: "✓", limit: "⚠", result: "▤",
+    answer: "✦"
+  };
 
-    const eventBox =
-        document.createElement("div");
+  events.forEach(event => {
+    const type = String(event.type || "info").replace(/[^a-zA-Z0-9_-]/g, "");
+    const row = document.createElement("div");
+    row.className = "event event-" + type;
 
-    eventBox.className =
-        "events";
+    const icon = document.createElement("span");
+    icon.className = "event-icon";
+    icon.textContent = icons[type] || "•";
 
+    const message = document.createElement("span");
+    message.className = "event-message";
+    message.textContent = String(event.message ?? JSON.stringify(event));
 
-    events.forEach(event => {
+    row.append(icon, message);
+    list.appendChild(row);
+  });
 
-        const item =
-            document.createElement("div");
-
-        item.className =
-            "event event-" + event.type;
-
-
-        let icon = "•";
-
-
-        if (event.type === "thinking") {
-            icon = "🧠";
-        }
-
-        else if (event.type === "tool_call") {
-            icon = "🔧";
-        }
-
-        else if (event.type === "sandbox") {
-            icon = "🐳";
-        }
-
-        else if (event.type === "error") {
-            icon = "❌";
-        }
-
-        else if (event.type === "success") {
-            icon = "✅";
-        }
-
-        else if (event.type === "limit") {
-            icon = "⚠️";
-        }
-
-        else if (event.type === "result") {
-            icon = "📋";
-        }
-
-
-        item.textContent =
-            icon + " " + event.message;
-
-
-        eventBox.appendChild(
-            item
-        );
-
-    });
-
-
-    chatBox.appendChild(
-        eventBox
-    );
-
-
-    chatBox.scrollTop =
-        chatBox.scrollHeight;
+  details.appendChild(list);
+  parent.appendChild(details);
 }
-
-
-/*
- * 检查 Agent 状态
- */
 
 async function checkHealth() {
+  try {
+    const response = await fetch("/api/health");
+    if (!response.ok) throw new Error("服务异常");
+    const data = await response.json();
+    const online = data.status === "ok";
 
-    try {
-
-        const response =
-            await fetch("/api/health");
-
-
-        const data =
-            await response.json();
-
-
-        if (data.status === "ok") {
-
-            statusText.textContent =
-                "● Agent 在线";
-
-        }
-
-        else {
-
-            statusText.textContent =
-                "Agent 状态异常";
-
-        }
-
-    }
-
-    catch (error) {
-
-        statusText.textContent =
-            "无法连接 Agent";
-
-    }
-
+    statusText.textContent = online ? "Agent 在线" : "Agent 异常";
+    sideStatus.textContent = online ? "服务已连接" : "服务异常";
+    healthDot.classList.toggle("offline", !online);
+    sideDot.classList.toggle("offline", !online);
+  } catch (error) {
+    statusText.textContent = "无法连接 Agent";
+    sideStatus.textContent = "连接失败";
+    healthDot.classList.add("offline");
+    sideDot.classList.add("offline");
+  }
 }
-
-
-/*
- * 发送消息
- */
 
 async function sendMessage() {
+  const message = input.value.trim();
+  if (!message || busy) return;
 
-    const message =
-        messageInput.value.trim();
+  welcome.style.display = "none";
+  addMessage(message, "user");
+  input.value = "";
+  input.style.height = "auto";
+  busy = true;
+  sendButton.disabled = true;
+  sendButton.textContent = "执行中…";
 
+  const aiBody = addMessage("", "ai");
+  const loading = document.createElement("div");
+  loading.className = "loading";
+  const spinner = document.createElement("span");
+  spinner.className = "spinner";
+  const loadingText = document.createElement("span");
+  loadingText.textContent = "Agent 正在分析任务并执行工具……";
+  loading.append(spinner, loadingText);
+  aiBody.appendChild(loading);
+  scrollToBottom();
 
-    if (!message) {
-        return;
+  try {
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message })
+    });
+
+    const data = await response.json();
+    loading.remove();
+
+    addEvents(data.events, aiBody);
+
+    const answer = document.createElement("div");
+    answer.className = "message-content";
+
+    if (data.success) {
+      renderMarkdown(answer, data.answer || "任务已完成，但 Agent 没有返回文本。");
+    } else {
+      renderMarkdown(answer, "**Agent 执行失败：**\n\n" + (data.error || "未知错误"));
     }
 
-
-    addMessage(
-        message,
-        "user"
-    );
-
-
-    messageInput.value = "";
-
-
-    sendButton.disabled =
-        true;
-
-    sendButton.textContent =
-        "处理中";
-
-
-    try {
-
-        const response =
-            await fetch(
-                "/api/chat",
-                {
-                    method: "POST",
-
-                    headers: {
-                        "Content-Type":
-                            "application/json"
-                    },
-
-                    body: JSON.stringify({
-                        message: message
-                    })
-                }
-            );
-
-
-        const data =
-            await response.json();
-
-
-        /*
-         * 显示 Agent 执行过程
-         */
-
-        addEvents(
-            data.events
-        );
-
-
-        /*
-         * 显示最终答案
-         */
-
-        if (data.success) {
-
-            addMessage(
-                data.answer,
-                "ai"
-            );
-
-        }
-
-        else {
-
-            addMessage(
-                "Agent 执行失败：" +
-                (data.error || "未知错误"),
-                "ai"
-            );
-
-        }
-
-    }
-
-    catch (error) {
-
-        addMessage(
-            "无法连接到 AI Agent API：" +
-            error.message,
-            "ai"
-        );
-
-    }
-
-
-    sendButton.disabled =
-        false;
-
-    sendButton.textContent =
-        "发送";
-
-
-    messageInput.focus();
-
+    aiBody.appendChild(answer);
+  } catch (error) {
+    loading.remove();
+    const errorBox = document.createElement("div");
+    errorBox.className = "message-content";
+    errorBox.textContent = "无法连接到 AI Agent API：" + error.message;
+    aiBody.appendChild(errorBox);
+  } finally {
+    busy = false;
+    sendButton.disabled = false;
+    sendButton.textContent = "发送 ↑";
+    input.focus();
+    scrollToBottom();
+  }
 }
 
+sendButton.addEventListener("click", sendMessage);
 
-/*
- * 点击发送
- */
+input.addEventListener("keydown", event => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    sendMessage();
+  }
+});
 
-sendButton.addEventListener(
-    "click",
-    sendMessage
-);
+input.addEventListener("input", () => {
+  input.style.height = "auto";
+  input.style.height = Math.min(input.scrollHeight, 180) + "px";
+});
 
+document.querySelectorAll("[data-prompt]").forEach(button => {
+  button.addEventListener("click", () => {
+    input.value = button.dataset.prompt;
+    input.focus();
+    input.dispatchEvent(new Event("input"));
+  });
+});
 
-/*
- * Enter 发送
- */
-
-messageInput.addEventListener(
-    "keydown",
-    function(event) {
-
-        if (event.key === "Enter") {
-
-            sendMessage();
-
-        }
-
-    }
-);
-
-
-/*
- * 页面加载时检查服务
- */
+document.getElementById("newChatButton").addEventListener("click", () => {
+  if (busy) return;
+  messages.replaceChildren();
+  welcome.style.display = "";
+  input.value = "";
+  input.focus();
+  scrollToBottom();
+});
 
 checkHealth();
-
-messageInput.focus();
-
+input.focus();
 </script>
-
 </body>
-
 </html>

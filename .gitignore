@@ -11,3 +11,8 @@ logs/
 .idea/
 .DS_Store
 *.save
+
+# Local backup files
+*.bak-*
+*.bak*
+.agent_backups/
